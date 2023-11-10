@@ -247,7 +247,7 @@ def compute_oae(vbm_out: np.ndarray, cf_no: int = 0,sig_start: int = 0) -> Tuple
     The fft is applied on the second dimension (axis=1).
 
     Args:
-      vbm_out:  The virtual basilar membrane motion (???).
+      vbm_out:  The velocity of the basilar membrane motion (???).
         An array of size num_frames x frame_size x num_channels
       cf_no: Which channel number to pick out
       sig_start: How many samples to skip in the frame (because of context???)
