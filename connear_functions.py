@@ -95,8 +95,8 @@ def load_connear_model(modeldir: str, json_name: str = "/Gmodel.json",
     
 def build_connear(modeldir: str, poles: str = '', Ncf: int = 201, full_model: bool = False,
                   name: str = 'periphery_model', print_summary: bool = False) -> Union[
-                      List[tf.keras.Model, tf.keras.Model, tf.keras.Model],
-                      List[tf.keras.Model, tf.Tensor]]:
+                      Tuple[tf.keras.Model, tf.keras.Model, tf.keras.Model],
+                      Tuple[tf.keras.Model, tf.Tensor]]:
     """Function to load the separate prectrained CoNNear modules.
 
     Args:
