@@ -3,35 +3,40 @@
 This script contains all the supplementary functions needed to execute the
 CoNNear example script in python.
 
-@author: Fotios Drakopoulos, UGent, 12/2020
+@author: Fotios Drakopoulos, UGent, Feb 2022
 """
+
+from os import path
 
 import numpy as np
 import tensorflow as tf
 import scipy.signal as sp_sig
 import scipy.io.wavfile
-from os import path
+from typing import List, Optional, Tuple, Union
 
-from keras.models import model_from_json, Model, Input
-from keras.utils import CustomObjectScope
-from keras.initializers import glorot_uniform
+from tensorflow.keras.models import model_from_json, Model
+from tensorflow.keras.layers import Input
+from tensorflow.keras.utils import CustomObjectScope
+from tensorflow.keras.initializers import glorot_uniform
 
-def rms (x, axis=0):
-    # compute rms of a matrix
+def rms (x: np.ndarray, axis: int = 0) -> np.ndarray:
+    """Compute RMS energy of a matrix."""
     sq = np.mean(np.square(x), axis = axis)
     return np.sqrt(sq)
-    
-def next_power_of_2(x):
+
+def next_power_of_2(x: int) -> int:
+    """Compute the next power of 2 bigger than the input x."""
     return 1 if x == 0 else int(2**np.ceil(np.log2(x)))
 
-def wavfile_read(wavfile,fs=[]):
-    # read a wavfile and normalize it
-    # if fs is given the signal is resampled to the given sampling frequency
+def wavfile_read(wavfile: str,fs: Optional[float] = None) -> Tuple[np.ndarray, float]:
+    """Read a wavfile and normalize it to +/-1.
+    If fs is given the signal is resampled to the given sampling frequency.
+    """
     fs_signal, speech = scipy.io.wavfile.read(wavfile)
     if not fs:
         fs=fs_signal
 
-    if speech.dtype != 'float32':
+    if speech.dtype != 'float32' and speech.dtype != 'float64':
         if speech.dtype == 'int16':
             nb_bits = 16 # -> 16-bit wav files
         elif speech.dtype == 'int32':
@@ -46,10 +51,23 @@ def wavfile_read(wavfile,fs=[]):
 
     return signalr, fs
 
-def load_connear_model(modeldir,json_name="/Gmodel.json",weights_name="/Gmodel.h5",crop=1,name=[]):
-    # Function to load each CoNNear model using tensorflow and keras
+def load_connear_model(modeldir: str, json_name: str = "/Gmodel.json",
+                       weights_name: str =  "/Gmodel.h5", 
+                       crop: bool = True, name: Optional[str] = None) -> tf.Model:
+    """Function to load each CoNNear model using tensorflow.
+    
+    Args:
+      modeldir: Where to find the model and weight files
+      json_name: The file within modeldir to find the TF model description
+      weights_name: The file within modeldir to find the weights data
+      crop: Whether to drop the last (???) layer.
+      name: The name for this new model.
+
+    Returns:
+      A Tensorflow Model
+    """
     #print ("loading model from " + modeldir )
-    json_file = open (modeldir + json_name, "r")
+    json_file = open(modeldir + json_name, "r")
     loaded_model_json = json_file.read()
     json_file.close()
 
@@ -73,60 +91,91 @@ def load_connear_model(modeldir,json_name="/Gmodel.json",weights_name="/Gmodel.h
 
     return model
     
-def build_connear(modeldir,poles='',cf_flag='',full_model=0):
-    ## Function to load the separate CoNNear modules
-    ## If a string is given for poles then the corresponding HI weights are
-    ## loaded for the cochlear model
-    ## If 1 is given for the cf_flag then the 1-CF CoNNear models are loaded
-    ## If 1 is given for the full_model argument then a concatenated version 
-    ## of the full periphery model (cochlea, IHC, ANFs) is returned 
-    ## By default the function loads and returns each module separately
-    if cf_flag:
-        cf_flag = '_1cf'
+def build_connear(modeldir: str, poles: str = '', Ncf: int = 201, full_model: bool = False,
+                  name: str = 'periphery_model', print_summary: bool = False) -> Union[
+                      List[tf.Model, tf.Model, tf.Model], List[tf.Model, tf.Tensor]]:
+    """Function to load the separate prectrained CoNNear modules.
+
+    Args:
+      modeldir: From which directory to load the model and weights
+      poles: What is the meaning of this name??? The HL curve to mdoel. If a string is given 
+        then the corresponding HI weights are loaded for the cochlear model. The default is
+        to model a normal auditory system.
+      Ncf: Number of channels (center frequencies). If no argument is given for the Ncf 
+        variable then the 201-CF CoNNear models are loaded, otherwise the function tries to 
+        load the CoNNear model definitions with the number of channels given in Ncf
+      full_model: Whether to return three separate periphery models (cochlea, IHC, ANFs) or 
+        a (combined) full periphery model is returned. By default the function loads and returns 
+        each module separately.
+      name: The name assigned to this Model.
+      print_summary: Print the Keras summary of the model
+    """
+    assert(Ncf == 201 or Ncf == 21 or Ncf == 1), "Only 201-, 21- and 1-CF models are provided by the current framework for the moment."
+    if Ncf != 201:
+        cf_flag = '_' + str(Ncf) + 'cf'
+    else:
+        cf_flag = ''
     # Cochlea
     poles = poles.lower() # make lowercase
     if (not poles) or poles == 'nh':
         cochlea = load_connear_model(modeldir,json_name="/cochlea.json",weights_name="/cochlea.h5",name="cochlea_model",crop=0)
     else:
-        assert(path.exists(modeldir + "cochlea_" + poles + ".h5")), "The poles for the selected HI profile do not exist. HI cochlear models are available for the following hearing-loss profiles: Flat25, Flat35, Slope25, Slope35"
+        assert(path.exists(modeldir + "/cochlea_" + poles + ".h5")), "The poles for the selected HI profile do not exist. HI cochlear models are available for the following hearing-loss profiles: Flat25, Flat35, Slope25, Slope35"
         cochlea = load_connear_model(modeldir,json_name="/cochlea.json",weights_name="/cochlea_" + poles + ".h5",name="cochlea_model",crop=0)
+    cochlea.trainable=False
+    for l in cochlea.layers:
+        l.trainable=False
     # IHC
     ihc = load_connear_model(modeldir,json_name="/ihc" + cf_flag + ".json",weights_name="/ihc.h5",name="ihc_model",crop=0)
-    # ANFs
-    anfh = load_connear_model(modeldir,json_name="/anfh" + cf_flag + ".json",weights_name="/anfh.h5",name="anfh_model")
-    anfm = load_connear_model(modeldir,json_name="/anfm" + cf_flag + ".json",weights_name="/anfm.h5",name="anfm_model")
-    anfl = load_connear_model(modeldir,json_name="/anfl" + cf_flag + ".json",weights_name="/anfl.h5",name="anfl_model")
+    ihc.trainable=False
+    for l in ihc.layers:
+        l.trainable=False
+    # ANF
+    anf = load_connear_model(modeldir,json_name="/anf" + cf_flag + ".json",weights_name="/anf.h5",name="anf_model")
+    anf.trainable=False
+    for l in anf.layers:
+        l.trainable=False
     
     if full_model:
-        audio_in =  Input(shape=(None,1), name="audio_input", dtype='float32')
+        audio_in = Input(shape=(None,1), name="audio_input", dtype='float32')
         cochlea = Model(cochlea.layers[0].input,cochlea.layers[-1].output)
         cochlea_out = cochlea(audio_in)
+        if Ncf < 201 and Ncf > 1: # downsample the frequency channels of CoNNear cochlea
+            CFs = K.arange(0,201,int((201-1)/(Ncf-1)))
+            cochlea_out=Lambda(lambda x: tf.gather(x,CFs,axis=2), name='freq_downsampling')(cochlea_out)
         cochlea = Model(audio_in, cochlea_out)
         # IHC
         ihc = ihc(cochlea.layers[-1].get_output_at(-1))
-        # ANFs
-        anfh = anfh(ihc)
-        anfm = anfm(ihc)
-        anfl = anfl(ihc)
-        # IHC-AN complex model
-        periphery = Model(input=cochlea.layers[0].input,output=[anfh,anfm,anfl])
-        periphery.layers[-5].name = 'cochlea_model'
-        periphery.layers[-4].name = 'ihc_model'
-        periphery.layers[-3].name = 'anfh_model'
-        periphery.layers[-2].name = 'anfm_model'
-        periphery.layers[-1].name = 'anfl_model'
-        #periphery.summary()
+        # ANF
+        anf = anf(ihc)
+        # periphery model
+        periphery = Model(inputs=cochlea.layers[0].input,outputs=anf,name=name)
+        periphery.layers[-3].name = 'cochlea_model'
+        periphery.layers[-2].name = 'ihc_model'
+        periphery.layers[-1].name = 'anf_model'
+        if print_summary:
+            periphery.summary()
         
-        return periphery
-        
+        return periphery, CFs
     else:
-        return cochlea, ihc, anfh, anfm, anfl
+        return cochlea, ihc, anf
     
-def slice_1dsignal(signal, window_size, winshift, minlength, left_context=256, right_context=256):
-    """ 
-    Return windows of the given signal by sweeping in stride fractions of window.
-    Slices that are less than minlength are omitted.
-    Signal must be a 1D-shaped array.
+def slice_1dsignal(signal: np.ndarray, window_size: int, winshift: int, minlength: int, 
+                   left_context:int = 256, right_context:int = 256) -> np.ndarray:
+    """Return windows of the given signal by sweeping in stride fractions of window. Slices that are
+    less than minlength are omitted. Input signal must be a 1D-shaped array.
+
+    Args:
+      signal: A one-dimensiona input waveform
+      window_size: The size of each window of data from the signal.
+      winshift: How much to shift the window as we progress down the signal.
+      minlength: Drop (final) windows that have less than this number of samples.
+      left_context: How much context to add (from earlier parts of the signal) before
+        the current window. (Or add zeros if not enough signal)
+      right_context: Like left, but to the right of the current window.
+    
+    Returns:
+      A 3D tensor of size num_frames x window_size x 1
     """
     assert len(signal.shape) == 1, "signal must be a 1D-shaped array"
     
@@ -154,10 +203,21 @@ def slice_1dsignal(signal, window_size, winshift, minlength, left_context=256, r
     slices = np.expand_dims(slices, axis=2) # the CNN will need 3D data
     return slices
     
-def unslice_3dsignal(signal, winlength, winshift, ignore_first_set=0, fs = 20e3, trailing_silence = 0.):
-    """ 
-    Merge the different windows of the signal.
-    The first dimension corresponds to the windows and the second to the samples of each window.
+def unslice_3dsignal(signal: np.ndarray, winlength: int, winshift: int, 
+                     ignore_first_set: int = 0, fs: float = 20e3, 
+                     trailing_silence: float = 0.) -> np.ndarray:
+    """  Merge the different windows of the signal, undoing the slice format above, after processing.
+
+    Args:
+      signal: A 3d tensor of shape num_frames x winlength x num_channels
+      winlength: How long is each frame of data?
+      winshift: How much is each window of data shifted in samples?
+      ignore_first_set: ????
+      fs: Sample rate of the data, needed for scaling trailing silence.
+      trailing_silence: ???
+    
+    Returns:
+      A numpy array of size ?????
     """
     assert len(signal.shape) == 3, "signal must be a 3D-shaped array"
     
@@ -179,9 +239,19 @@ def unslice_3dsignal(signal, winlength, winshift, ignore_first_set=0, fs = 20e3,
     tl_2d = np.expand_dims(tl_2d[trailing_zeros:,:], axis=0)
     return tl_2d
     
-def compute_oae(vbm_out, cf_no=0,sig_start=0):
-    # compute the fft of the vbm output over the cf_no channel to predict the oae
-    # the fft is applied on the second dimension (axis=1)
+def compute_oae(vbm_out: np.ndarray, cf_no: int = 0,sig_start: int = 0) -> Tuple[np.array, int]:
+    """Compute the fft of the vbm output over the cf_no channel to predict the oae
+    The fft is applied on the second dimension (axis=1).
+
+    Args:
+      vbm_out:  ??. An array of size num_frames x frame_size x num_channels
+      cf_no: Which channel number to pick out
+      sig_start: How many samples to skip in the frame (because of context???)
+    
+    Returns:
+      A 2-ple: the OAE magnitude of size num_frames x fftSize/2+1, and 
+                the size of the real part of the fft.
+    """
     oae_sig = vbm_out[:, sig_start:, cf_no] # pick a CF
     oae_fft = np.fft.fft(oae_sig)
     nfft = int(oae_fft.shape[1]/2+1)
