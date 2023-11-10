@@ -53,7 +53,7 @@ def wavfile_read(wavfile: str,fs: Optional[float] = None) -> Tuple[np.ndarray, f
 
 def load_connear_model(modeldir: str, json_name: str = "/Gmodel.json",
                        weights_name: str =  "/Gmodel.h5", 
-                       crop: bool = True, name: Optional[str] = None) -> tf.Keras.Model:
+                       crop: bool = True, name: Optional[str] = None) -> tf.keras.Model:
     """Function to load one portion of a CoNNear model.
     
     Args:
@@ -95,8 +95,8 @@ def load_connear_model(modeldir: str, json_name: str = "/Gmodel.json",
     
 def build_connear(modeldir: str, poles: str = '', Ncf: int = 201, full_model: bool = False,
                   name: str = 'periphery_model', print_summary: bool = False) -> Union[
-                      List[tf.Keras.Model, tf.Keras.Model, tf.Keras.Model],
-                      List[tf.Keras.Model, tf.Tensor]]:
+                      List[tf.keras.Model, tf.keras.Model, tf.keras.Model],
+                      List[tf.keras.Model, tf.Tensor]]:
     """Function to load the separate prectrained CoNNear modules.
 
     Args:
