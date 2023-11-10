@@ -54,13 +54,15 @@ def wavfile_read(wavfile: str,fs: Optional[float] = None) -> Tuple[np.ndarray, f
 def load_connear_model(modeldir: str, json_name: str = "/Gmodel.json",
                        weights_name: str =  "/Gmodel.h5", 
                        crop: bool = True, name: Optional[str] = None) -> tf.Model:
-    """Function to load each CoNNear model using tensorflow.
+    """Function to load one portion of a CoNNear model.
     
     Args:
       modeldir: Where to find the model and weight files
       json_name: The file within modeldir to find the TF model description
       weights_name: The file within modeldir to find the weights data
-      crop: Whether to drop the last (???) layer.
+      crop: Drop the last layer of the model, which crops out the extra context 
+        provided to the model.  Set to False to remove this last layer and provide 
+        the context to the next part of the model.
       name: The name for this new model.
 
     Returns:
@@ -98,9 +100,10 @@ def build_connear(modeldir: str, poles: str = '', Ncf: int = 201, full_model: bo
 
     Args:
       modeldir: From which directory to load the model and weights
-      poles: What is the meaning of this name??? The HL curve to mdoel. If a string is given 
-        then the corresponding HI weights are loaded for the cochlear model. The default is
-        to model a normal auditory system.
+      poles: The HL curve to model. If a string is given then the corresponding HI weights are 
+        loaded for the cochlear model. The default is to model a normal auditory system. 
+        (The poles name was adopted from the Verhulst et al model as it was used to define the 
+        different cochlear filter profiles/tuning.)
       Ncf: Number of channels (center frequencies). If no argument is given for the Ncf 
         variable then the 201-CF CoNNear models are loaded, otherwise the function tries to 
         load the CoNNear model definitions with the number of channels given in Ncf
@@ -135,7 +138,7 @@ def build_connear(modeldir: str, poles: str = '', Ncf: int = 201, full_model: bo
     anf.trainable=False
     for l in anf.layers:
         l.trainable=False
-    
+ 
     if full_model:
         audio_in = Input(shape=(None,1), name="audio_input", dtype='float32')
         cochlea = Model(cochlea.layers[0].input,cochlea.layers[-1].output)
@@ -244,7 +247,8 @@ def compute_oae(vbm_out: np.ndarray, cf_no: int = 0,sig_start: int = 0) -> Tuple
     The fft is applied on the second dimension (axis=1).
 
     Args:
-      vbm_out:  ??. An array of size num_frames x frame_size x num_channels
+      vbm_out:  The virtual basilar membrane motion (???).
+        An array of size num_frames x frame_size x num_channels
       cf_no: Which channel number to pick out
       sig_start: How many samples to skip in the frame (because of context???)
     
